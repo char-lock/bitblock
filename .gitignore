@@ -1,0 +1,5 @@
+/src/test.py
+.bitblock.cache.db
+.bitblock.cache.db-journal
+/src/.bitblock.update
+*.pyc
