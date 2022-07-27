@@ -3,3 +3,5 @@
 .bitblock.cache.db-journal
 /src/.bitblock.update
 *.pyc
+/dist/
+/src/bitblock.egg-info/
