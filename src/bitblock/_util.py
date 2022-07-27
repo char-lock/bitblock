@@ -8,7 +8,7 @@ Provides utility functions and classes to the overall bitblock module.
 import asyncio
 import sqlite3 as sql3
 
-from typing import Any, List
+from typing import Any, List, Union
 from types import FunctionType
 
 from . import rpc
@@ -104,6 +104,25 @@ def print_progress_update(
     )
     _text += f"{(' ' * (120 - len(_text))) if len(_text) < 120 else ''}"
     print(_text, end="\r")
+
+
+def nil_max(_v: List) -> float:
+    """ Returns the maximum value in a list, or 0 if it is empty.
+    
+
+    ### Parameters
+    --------------
+    _v: List
+        list to find max in
+
+    """
+    if len(_v) == 0:
+        return 0.00
+    try:
+        return float(max(_v)[0])
+    except ValueError:
+        return 0.00
+
 
 
 # Non-BitBlock Classes
@@ -560,7 +579,7 @@ class BitBlockCache(object):
 
         ### Parameters
         --------------
-        
+
         tx_list: List
             list of transactions to insert
         
@@ -598,12 +617,12 @@ class BitBlockCache(object):
         _addresses = []
         _addresses.extend(self._cursor.execute(f"""
             SELECT DISTINCT debit_addresses FROM transactions
-                WHERE debit_addresses != "" AND txtime > {since}
-        """))
+                WHERE NOT debit_addresses = "" AND txtime > {since}
+        """).fetchall())
         _addresses.extend(self._cursor.execute(f"""
             SELECT DISTINCT credit_addresses FROM transactions
-                WHERE credit_addresses != "" AND txtime > {since}
-        """))
+                WHERE NOT credit_addresses = "" AND txtime > {since}
+        """).fetchall())
         return list(set(_addresses))
     
 
@@ -624,12 +643,12 @@ class BitBlockCache(object):
         """
         _debits = sum(self._cursor.execute(f"""
             SELECT debit_value FROM transactions
-                WHERE debit_addresses = {address} AND debit_value > 0
+                WHERE debit_addresses = "{address}" AND debit_value > 0
                     AND txtime > {since}
         """))
         _credits = sum(self._cursor.execute(f"""
             SELECT credit_value FROM transactions
-                WHERE credit_addresses = {address} AND credit_value > 0
+                WHERE credit_addresses = "{address}" AND credit_value > 0
                     AND txtime > {since}
         """))
         return _credits - _debits
@@ -647,24 +666,24 @@ class BitBlockCache(object):
             address to get last tx time
 
         """
-        return max(self._cursor.execute(f"""
+        return nil_max(self._cursor.execute(f"""
             SELECT txtime FROM transactions
-                WHERE credit_addresses = {address} OR
-                    debit_addresses = {address}
-        """))
+                WHERE credit_addresses = "{address}" OR
+                    debit_addresses = "{address}"
+        """).fetchall())
     
 
     def get_last_cached_time(self) -> float:
         """ Returns the latest time of cached transaction. """
-        return max(self._cursor.execute(f"""
+        return nil_max(self._cursor.execute(f"""
             SELECT txtime FROM transactions
-        """))
+        """).fetchall())
 
     def get_last_balance_update_time(self) -> float:
         """ Returns the latest time of a cached balance. """
-        return max(self._cursor.execute(f"""
+        return nil_max(self._cursor.execute(f"""
             SELECT last_used FROM balances
-        """))
+        """).fetchall())
 
     def get_address_cached_balance(self, address: str) -> float:
         """ Returns the last cached balance for an address.
@@ -677,10 +696,10 @@ class BitBlockCache(object):
             address to pull cached balance for
 
         """
-        return max(self._cursor.execute(f"""
+        return nil_max(self._cursor.execute(f"""
             SELECT balance FROM balances
                 WHERE addresses = {address}
-        """))
+        """).fetchall())
     
     def address_cached(self, address: str) -> str:
         """ Returns whether an address has ever had a balance cached.
@@ -695,8 +714,8 @@ class BitBlockCache(object):
         """
         _entry = self._cursor.execute(f"""
             SELECT * FROM balances
-                WHERE addresses = {address}
-        """)
+                WHERE addresses = "{address}"
+        """).fetchall()
         return len(_entry) > 0
 
     def update_balance(

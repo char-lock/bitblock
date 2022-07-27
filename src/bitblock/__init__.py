@@ -70,6 +70,7 @@ class BitBlock(object):
         self._update_thread_exists = False
         self._update_queue = []
         async_get(self._a_update_tx())
+        self._update_balances()
 
 
     async def _a_queue_block_by_height(self, height: int):
@@ -160,7 +161,7 @@ class BitBlock(object):
             )
     
 
-    def _a_update_balances(self) -> None:
+    def _update_balances(self) -> None:
         """ Updates all balances from the transaction cache. """
         _last_tx_time: float = self._cache.get_last_cached_time()
         _last_balance_time: float = self._cache.get_last_balance_update_time()
@@ -174,19 +175,18 @@ class BitBlock(object):
         _start: float = time.time()
         for _a in _addresses:
             _done += 1
-            if self._cache.address_cached(_a):
-                _balance: float = self._cache.get_address_cached_balance(_a)
+            if self._cache.address_cached(_a[0]):
+                _balance: float = self._cache.get_address_cached_balance(_a[0])
             else:
                 _balance: float = 0.00
             _balance += self._cache.get_address_balance(
                 address = _a,
                 since = _last_balance_time
             )
-            _tx_time: float = self._cache.get_address_last_tx(_a)
-            self._cache.update_balance(_a, _balance, _tx_time)
+            _tx_time: float = self._cache.get_address_last_tx(_a[0])
+            self._cache.update_balance(_a[0], _balance, _tx_time)
             print_progress_update(
                 "cache balance",
-                0, _total, _done,
+                0, _done, _total,
                 _start, time.time()
             )
-            
