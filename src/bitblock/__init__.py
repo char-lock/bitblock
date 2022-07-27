@@ -69,7 +69,7 @@ class BitBlock(object):
         self._auto_update = auto_update
         self._update_thread_exists = False
         self._update_queue = []
-        async_get(self._update())
+        async_get(self._a_update_tx())
 
 
     async def _a_queue_block_by_height(self, height: int):
@@ -114,7 +114,7 @@ class BitBlock(object):
         return None
         
 
-    async def _update(self) -> None:
+    async def _a_update_tx(self) -> None:
         """ Internal ...
 
         Updates BitBlock as needed.
@@ -159,9 +159,34 @@ class BitBlock(object):
                 _start_time, time.time()
             )
     
-    def update_manual(self) -> None:
-        """ Manually forces the cache to update itself. """
-        _setting = self._auto_update
-        self._auto_update = True
-        self._update()
-        self._auto_update = _setting
+
+    def _a_update_balances(self) -> None:
+        """ Updates all balances from the transaction cache. """
+        _last_tx_time: float = self._cache.get_last_cached_time()
+        _last_balance_time: float = self._cache.get_last_balance_update_time()
+        if _last_tx_time == _last_balance_time:
+            return None
+        _addresses: List = self._cache.fetch_unique_addresses(
+            since=_last_balance_time
+        )
+        _total: int = len(_addresses)
+        _done: int = 0
+        _start: float = time.time()
+        for _a in _addresses:
+            _done += 1
+            if self._cache.address_cached(_a):
+                _balance: float = self._cache.get_address_cached_balance(_a)
+            else:
+                _balance: float = 0.00
+            _balance += self._cache.get_address_balance(
+                address = _a,
+                since = _last_balance_time
+            )
+            _tx_time: float = self._cache.get_address_last_tx(_a)
+            self._cache.update_balance(_a, _balance, _tx_time)
+            print_progress_update(
+                "cache balance",
+                0, _total, _done,
+                _start, time.time()
+            )
+            

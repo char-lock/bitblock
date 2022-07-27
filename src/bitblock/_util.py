@@ -557,6 +557,10 @@ class BitBlockCache(object):
     ) -> None:
         """ Inserts all transactions provided into the cache database.
         
+
+        ### Parameters
+        --------------
+        
         tx_list: List
             list of transactions to insert
         
@@ -578,45 +582,155 @@ class BitBlockCache(object):
             )
         self._db.commit()
 
-    def fetch_unique_addresses(self) -> List:
+
+    def fetch_unique_addresses(self, since: float = 0.00) -> List:
         """ Returns a list containing all of the unique addresses with
         related transactions that have been cached by BitBlock.
 
+
+        ### Parameters
+        --------------
+
+        since: float
+            time to grab unique addresses after
+
         """
         _addresses = []
-        _addresses.extend(self._cursor.execute("""
+        _addresses.extend(self._cursor.execute(f"""
             SELECT DISTINCT debit_addresses FROM transactions
-                WHERE debit_addresses != ""
+                WHERE debit_addresses != "" AND txtime > {since}
         """))
-        _addresses.extend(self._cursor.execute("""
+        _addresses.extend(self._cursor.execute(f"""
             SELECT DISTINCT credit_addresses FROM transactions
-                WHERE credit_addresses != ""
+                WHERE credit_addresses != "" AND txtime > {since}
         """))
         return list(set(_addresses))
     
-    def get_address_balance(self, address: str) -> float:
+
+    def get_address_balance(self, address: str, since: float = 0.00) -> float:
         """ Returns the calculated balance of an address from all
         cached transactions.
+
+
+        ### Parameters
+        --------------
+
+        address: str
+            address to pull balance for
+        
+        since: float
+            time after to grab balance
 
         """
         _debits = sum(self._cursor.execute(f"""
             SELECT debit_value FROM transactions
                 WHERE debit_addresses = {address} AND debit_value > 0
+                    AND txtime > {since}
         """))
         _credits = sum(self._cursor.execute(f"""
             SELECT credit_value FROM transactions
                 WHERE credit_addresses = {address} AND credit_value > 0
+                    AND txtime > {since}
         """))
         return _credits - _debits
     
+
     def get_address_last_tx(self, address: str) -> float:
         """ Returns the time of the last cached transaction for an
         address.
 
+
+        ### Parameters
+        --------------
+
+        address: str
+            address to get last tx time
+
         """
         return max(self._cursor.execute(f"""
-            SELECT block_time FROM transactions
+            SELECT txtime FROM transactions
                 WHERE credit_addresses = {address} OR
                     debit_addresses = {address}
         """))
     
+
+    def get_last_cached_time(self) -> float:
+        """ Returns the latest time of cached transaction. """
+        return max(self._cursor.execute(f"""
+            SELECT txtime FROM transactions
+        """))
+
+    def get_last_balance_update_time(self) -> float:
+        """ Returns the latest time of a cached balance. """
+        return max(self._cursor.execute(f"""
+            SELECT last_used FROM balances
+        """))
+
+    def get_address_cached_balance(self, address: str) -> float:
+        """ Returns the last cached balance for an address.
+
+
+        ### Parameters
+        --------------
+
+        address: str
+            address to pull cached balance for
+
+        """
+        return max(self._cursor.execute(f"""
+            SELECT balance FROM balances
+                WHERE addresses = {address}
+        """))
+    
+    def address_cached(self, address: str) -> str:
+        """ Returns whether an address has ever had a balance cached.
+
+
+        ### Parameters
+        --------------
+
+        address: str
+            address to check for a record for
+
+        """
+        _entry = self._cursor.execute(f"""
+            SELECT * FROM balances
+                WHERE addresses = {address}
+        """)
+        return len(_entry) > 0
+
+    def update_balance(
+        self,
+        address: str,
+        balance: float,
+        tx_time: float
+    ) -> None:
+        """ Updates the address's cached balance.
+        
+
+        ### Parameters
+        --------------
+
+        address: str
+            address to update
+        
+        balance: float
+            current balance of address
+        
+        tx_time: float
+            last cached tx time
+
+        """
+        if self.address_cached(address):
+            self._cursor.execute(f"""
+                UPDATE balances
+                    SET last_used = {tx_time}, balance = {balance}
+                    WHERE addresses = {address}
+            """)
+        else:
+            self._cursor.execute(f"""
+                INSERT INTO balances VALUES(
+                    "{address}", {balance}, {tx_time}
+                )
+            """)
+        self._db.commit()
