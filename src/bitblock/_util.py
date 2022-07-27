@@ -555,7 +555,21 @@ class BitBlockCache(object):
         block_height: int,
         block_time: float
     ) -> None:
-        """ Inserts all transactions provided into the cache database. """
+        """ Inserts all transactions provided into the cache database.
+        
+        tx_list: List
+            list of transactions to insert
+        
+        block_hash: BlockHash
+            hash where transactions are located
+        
+        block_height: int
+            height of block where transactions are located
+        
+        block_time: float
+            time block was mined
+        
+        """
         self.open()
         for _t in tx_list:
             self.insert_transaction(
@@ -563,3 +577,46 @@ class BitBlockCache(object):
                 block_hash, block_height, block_time
             )
         self._db.commit()
+
+    def fetch_unique_addresses(self) -> List:
+        """ Returns a list containing all of the unique addresses with
+        related transactions that have been cached by BitBlock.
+
+        """
+        _addresses = []
+        _addresses.extend(self._cursor.execute("""
+            SELECT DISTINCT debit_addresses FROM transactions
+                WHERE debit_addresses != ""
+        """))
+        _addresses.extend(self._cursor.execute("""
+            SELECT DISTINCT credit_addresses FROM transactions
+                WHERE credit_addresses != ""
+        """))
+        return list(set(_addresses))
+    
+    def get_address_balance(self, address: str) -> float:
+        """ Returns the calculated balance of an address from all
+        cached transactions.
+
+        """
+        _debits = sum(self._cursor.execute(f"""
+            SELECT debit_value FROM transactions
+                WHERE debit_addresses = {address} AND debit_value > 0
+        """))
+        _credits = sum(self._cursor.execute(f"""
+            SELECT credit_value FROM transactions
+                WHERE credit_addresses = {address} AND credit_value > 0
+        """))
+        return _credits - _debits
+    
+    def get_address_last_tx(self, address: str) -> float:
+        """ Returns the time of the last cached transaction for an
+        address.
+
+        """
+        return max(self._cursor.execute(f"""
+            SELECT block_time FROM transactions
+                WHERE credit_addresses = {address} OR
+                    debit_addresses = {address}
+        """))
+    
