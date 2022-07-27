@@ -1,4 +1,5 @@
 """ bitblock._util
+
 Provides utility functions and classes to the overall bitblock module.
 
 """
@@ -80,22 +81,23 @@ def print_progress_update(
     _processed: int = current_value - start_value
     _remaining: int = target_value - current_value
 
-    _percent: float = current_value / _quantity * 100.00
+    _percent: float = current_value / _quantity * 100.00 if _quantity else 0
     
     _elapsed: float = proc_current_time - proc_start_time
-    _time_per_value: float = _elapsed / _processed
-    _value_per_time: float = _processed / _elapsed
+    _time_per_value: float = _elapsed / _processed if _processed else 0
+    _value_per_time: float = _processed / _elapsed if _elapsed else 0
     _eta: float = _time_per_value * _remaining
 
     _bar_sz: int = int(_percent // 10.00)
 
     _text: str = (
         f"{label} [{'=' * _bar_sz}{' ' * (10 - _bar_sz)}]"
+        + f" ({current_value}/{target_value})"
         + f" {_percent:.2f}%"
-        + f" ({_value_per_time:.3f} bl/s) (est. {_eta}s remaining)"
+        + f" ({_value_per_time:.3f} bl/s) (est. {_eta:.2f}s remaining)"
     )
-    _text += f"{(' ' * (120 - len(_text))) if len(_text) < 120 else ''}"
-    print(_text, end='\b')
+    _text += f"{(' ' * (71 - len(_text))) if len(_text) < 71 else ''}"
+    print(_text, end="\r")
 
 
 # Non-BitBlock Classes
@@ -107,7 +109,7 @@ class BtcBlock(object):
 
     """
     __slots__ = (
-        "_hash", "height", "_next_hash", "_prev_hash", "_time",
+        "_hash", "_height", "_rpc", "_next_hash", "_prev_hash", "_time",
         "_transactions",
     )
 
@@ -178,6 +180,30 @@ class BtcBlock(object):
         _hash: BlockHash = async_get(rpc_conn.get_block_hash(block_height))
         return cls(rpc_conn, _hash)
     
+
+    @classmethod
+    async def a_from_height(
+        cls,
+        rpc_conn: rpc.BitcoinRPC,
+        block_height: int
+    ):
+        """ Initialises a BtcBlock from a provided height value.
+
+
+        ### Parameters
+        --------------
+
+        rpc_conn: rpc.BitcoinRPC
+            A connection to an RPC server
+        
+        block_height: int
+            Height of the target block to load
+
+        """
+        _hash = await rpc_conn.get_block_hash(block_height)
+        return cls(rpc_conn, _hash)
+    
+
     async def _update(self) -> None:
         """ Internal ...
 
@@ -321,7 +347,7 @@ class BtcBlock(object):
     @property
     def hash(self) -> BlockHash:
         """ Block hash of the current block. """
-        return self._block_hash
+        return self._hash
     
     @property
     def height(self) -> int:
@@ -363,7 +389,7 @@ class BitBlockCache(object):
     blockchain for BitBlock to pull at its leisure.
 
     """
-    __slots__ = ("_db_location", "_db", "_cursor")
+    __slots__ = ("_filename", "_db", "_cursor")
 
     def __init__(self, db_location: str):
         """ Initialises the cache file.
@@ -376,6 +402,8 @@ class BitBlockCache(object):
         
         """
         self._filename = db_location
+        self._db = sql3.connect(self._filename)
+        self._cursor = self._db.cursor()
         self._init_db()
     
 
@@ -393,16 +421,12 @@ class BitBlockCache(object):
         if self._db:
             self._db.commit()
             self._db.close()
-            self._cursor = None
-            self._db = None
 
 
     def close_no_save(self) -> None:
         """ Closes the database connection and discards any changes. """
         if self._db:
             self._db.close()
-            self._cursor = None
-            self._db = None
     
 
     def _init_db(self) -> None:
@@ -412,7 +436,6 @@ class BitBlockCache(object):
         and adding any tables that are missing.
 
         """
-        self.open()
         _i_tx: bool = not self.table_exists("transactions")
         _i_bal: bool = not self.table_exists("balances")
         if _i_tx:
@@ -438,7 +461,7 @@ class BitBlockCache(object):
                      last_used NUMERIC
                     )
             """)
-        self.save_and_close
+        self._db.commit()
     
 
     def table_exists(self, table_name: str) -> bool:
@@ -452,12 +475,9 @@ class BitBlockCache(object):
             name of the table to check for
         
         """
-        self.open()
         try:
             self._cursor.execute(f"SELECT * FROM {table_name}")
-            self.close_no_save()
         except sql3.OperationalError:
-            self.close_no_save()
             return False
         return True
     
@@ -487,8 +507,6 @@ class BitBlockCache(object):
             Time of block that holds this transaction
         
         """
-        if self._db or self._cursor is None:
-            self.open()
         _txid: str = tx[0]
         _t_d_txid: List = []
         _t_d_n: List = []
@@ -504,16 +522,16 @@ class BitBlockCache(object):
         for _c in tx[2]:
             _t_c_addr.append(_c[0])
             _t_c_value.append(_c[1])
-        for _i in len(tx[1]):
+        for _i in range(len(tx[1])):
             self._cursor.execute(f"""
                 INSERT INTO transactions VALUES (
                     "{block_hash}", "{block_height}",
                     "{_txid}", {block_time},
                     "{_t_d_txid[_i]}", {_t_d_n[_i]}, "{','.join(_t_d_addr[_i])}",
-                    {_t_d_value}, "", 0
+                    {_t_d_value[_i]}, "", 0
                 )
             """)
-        for _i in len(tx[2]):
+        for _i in range(len(tx[2])):
             self._cursor.execute(f"""
                 INSERT INTO transactions VALUES (
                     "{block_hash}", "{block_height}",
@@ -538,4 +556,4 @@ class BitBlockCache(object):
                 _t,
                 block_hash, block_height, block_time
             )
-        self.save_and_close()
+        self._db.commit()
