@@ -86,7 +86,12 @@ def print_progress_update(
     _elapsed: float = proc_current_time - proc_start_time
     _time_per_value: float = _elapsed / _processed if _processed else 0
     _value_per_time: float = _processed / _elapsed if _elapsed else 0
-    _eta: float = _time_per_value * _remaining
+    _eta_s: float = _time_per_value * _remaining
+    _eta_m: float = _eta_s // 60
+    _eta_h: float = _eta_m // 60
+    _eta_m -= _eta_h * 60
+    _eta_s -= _eta_h * 60 * 60
+    _eta_s -= _eta_m * 60
 
     _bar_sz: int = int(_percent // 10.00)
 
@@ -94,9 +99,10 @@ def print_progress_update(
         f"{label} [{'=' * _bar_sz}{' ' * (10 - _bar_sz)}]"
         + f" ({current_value}/{target_value})"
         + f" {_percent:.2f}%"
-        + f" ({_value_per_time:.3f} bl/s) (est. {_eta:.2f}s remaining)"
+        + f" ({_value_per_time:.3f} bl/s) "
+        + f" (est. {_eta_h:.0f}h {_eta_m:.0f}m {_eta_s:.2f}s remaining)"
     )
-    _text += f"{(' ' * (71 - len(_text))) if len(_text) < 71 else ''}"
+    _text += f"{(' ' * (120 - len(_text))) if len(_text) < 120 else ''}"
     print(_text, end="\r")
 
 
