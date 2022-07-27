@@ -8,7 +8,7 @@ Provides utility functions and classes to the overall bitblock module.
 import asyncio
 import sqlite3 as sql3
 
-from typing import Any, List
+from typing import Any, List, Union
 from types import FunctionType
 
 from . import rpc
@@ -86,7 +86,12 @@ def print_progress_update(
     _elapsed: float = proc_current_time - proc_start_time
     _time_per_value: float = _elapsed / _processed if _processed else 0
     _value_per_time: float = _processed / _elapsed if _elapsed else 0
-    _eta: float = _time_per_value * _remaining
+    _eta_s: float = _time_per_value * _remaining
+    _eta_m: float = _eta_s // 60
+    _eta_h: float = _eta_m // 60
+    _eta_m -= _eta_h * 60
+    _eta_s -= _eta_h * 60 * 60
+    _eta_s -= _eta_m * 60
 
     _bar_sz: int = int(_percent // 10.00)
 
@@ -94,10 +99,30 @@ def print_progress_update(
         f"{label} [{'=' * _bar_sz}{' ' * (10 - _bar_sz)}]"
         + f" ({current_value}/{target_value})"
         + f" {_percent:.2f}%"
-        + f" ({_value_per_time:.3f} bl/s) (est. {_eta:.2f}s remaining)"
+        + f" ({_value_per_time:.3f} bl/s) "
+        + f" (est. {_eta_h:.0f}h {_eta_m:.0f}m {_eta_s:.2f}s remaining)"
     )
-    _text += f"{(' ' * (71 - len(_text))) if len(_text) < 71 else ''}"
+    _text += f"{(' ' * (120 - len(_text))) if len(_text) < 120 else ''}"
     print(_text, end="\r")
+
+
+def nil_max(_v: List) -> float:
+    """ Returns the maximum value in a list, or 0 if it is empty.
+    
+
+    ### Parameters
+    --------------
+    _v: List
+        list to find max in
+
+    """
+    if len(_v) == 0:
+        return 0.00
+    try:
+        return float(max(_v)[0])
+    except ValueError:
+        return 0.00
+
 
 
 # Non-BitBlock Classes
@@ -549,11 +574,182 @@ class BitBlockCache(object):
         block_height: int,
         block_time: float
     ) -> None:
-        """ Inserts all transactions provided into the cache database. """
+        """ Inserts all transactions provided into the cache database.
+        
+
+        ### Parameters
+        --------------
+
+        tx_list: List
+            list of transactions to insert
+        
+        block_hash: BlockHash
+            hash where transactions are located
+        
+        block_height: int
+            height of block where transactions are located
+        
+        block_time: float
+            time block was mined
+        
+        """
         self.open()
         for _t in tx_list:
             self.insert_transaction(
                 _t,
                 block_hash, block_height, block_time
             )
+        self._db.commit()
+
+
+    def fetch_unique_addresses(self, since: float = 0.00) -> List:
+        """ Returns a list containing all of the unique addresses with
+        related transactions that have been cached by BitBlock.
+
+
+        ### Parameters
+        --------------
+
+        since: float
+            time to grab unique addresses after
+
+        """
+        _addresses = []
+        _addresses.extend(self._cursor.execute(f"""
+            SELECT DISTINCT debit_addresses FROM transactions
+                WHERE NOT debit_addresses = "" AND txtime > {since}
+        """).fetchall())
+        _addresses.extend(self._cursor.execute(f"""
+            SELECT DISTINCT credit_addresses FROM transactions
+                WHERE NOT credit_addresses = "" AND txtime > {since}
+        """).fetchall())
+        return list(set(_addresses))
+    
+
+    def get_address_balance(self, address: str, since: float = 0.00) -> float:
+        """ Returns the calculated balance of an address from all
+        cached transactions.
+
+
+        ### Parameters
+        --------------
+
+        address: str
+            address to pull balance for
+        
+        since: float
+            time after to grab balance
+
+        """
+        _debits = sum(self._cursor.execute(f"""
+            SELECT debit_value FROM transactions
+                WHERE debit_addresses = "{address}" AND debit_value > 0
+                    AND txtime > {since}
+        """))
+        _credits = sum(self._cursor.execute(f"""
+            SELECT credit_value FROM transactions
+                WHERE credit_addresses = "{address}" AND credit_value > 0
+                    AND txtime > {since}
+        """))
+        return _credits - _debits
+    
+
+    def get_address_last_tx(self, address: str) -> float:
+        """ Returns the time of the last cached transaction for an
+        address.
+
+
+        ### Parameters
+        --------------
+
+        address: str
+            address to get last tx time
+
+        """
+        return nil_max(self._cursor.execute(f"""
+            SELECT txtime FROM transactions
+                WHERE credit_addresses = "{address}" OR
+                    debit_addresses = "{address}"
+        """).fetchall())
+    
+
+    def get_last_cached_time(self) -> float:
+        """ Returns the latest time of cached transaction. """
+        return nil_max(self._cursor.execute(f"""
+            SELECT txtime FROM transactions
+        """).fetchall())
+
+    def get_last_balance_update_time(self) -> float:
+        """ Returns the latest time of a cached balance. """
+        return nil_max(self._cursor.execute(f"""
+            SELECT last_used FROM balances
+        """).fetchall())
+
+    def get_address_cached_balance(self, address: str) -> float:
+        """ Returns the last cached balance for an address.
+
+
+        ### Parameters
+        --------------
+
+        address: str
+            address to pull cached balance for
+
+        """
+        return nil_max(self._cursor.execute(f"""
+            SELECT balance FROM balances
+                WHERE addresses = {address}
+        """).fetchall())
+    
+    def address_cached(self, address: str) -> str:
+        """ Returns whether an address has ever had a balance cached.
+
+
+        ### Parameters
+        --------------
+
+        address: str
+            address to check for a record for
+
+        """
+        _entry = self._cursor.execute(f"""
+            SELECT * FROM balances
+                WHERE addresses = "{address}"
+        """).fetchall()
+        return len(_entry) > 0
+
+    def update_balance(
+        self,
+        address: str,
+        balance: float,
+        tx_time: float
+    ) -> None:
+        """ Updates the address's cached balance.
+        
+
+        ### Parameters
+        --------------
+
+        address: str
+            address to update
+        
+        balance: float
+            current balance of address
+        
+        tx_time: float
+            last cached tx time
+
+        """
+        if self.address_cached(address):
+            self._cursor.execute(f"""
+                UPDATE balances
+                    SET last_used = {tx_time}, balance = {balance}
+                    WHERE addresses = {address}
+            """)
+        else:
+            self._cursor.execute(f"""
+                INSERT INTO balances VALUES(
+                    "{address}", {balance}, {tx_time}
+                )
+            """)
         self._db.commit()
