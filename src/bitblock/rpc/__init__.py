@@ -1,4 +1,8 @@
-""" BitBlock.RPC """
+""" bitblock.rpc
+
+Allows user to communicate with the RPC server with async.
+
+"""
 
 import itertools
 from types import TracebackType
@@ -34,19 +38,65 @@ class BitcoinRPC:
     """ Connection to the BitcoinRPC with async. """
     __slots__ = ("_url", "_client")
 
-    def __init__(self, url: str, rpc_user: str, rpc_password: str, **options: Any) -> None:
+    def __init__(self,
+        url: str, rpc_user: str, rpc_password: str,
+        **options: Any
+    ) -> None:
+        """ Initialises the Bitcoin RPC connection.
+
+
+        ### Parameters
+        --------------
+
+        url: str
+            url to the server
+
+        rpc_user: str
+            username to log into server
+
+        rpc_password: str
+            password to log into server
+
+        """
         self._url = url
         self._client = self._configure_client(rpc_user, rpc_password, **options)
-    
+
+
     async def __aenter__(self) -> "BitcoinRPC":
+        """ Async entry handler for BitcoinRPC. """
         return self
     
-    async def __aexit__(self, exc_type: Type[BaseException], exc_val: BaseException, exc_tb: TracebackType) -> None:
+
+    async def __aexit__(
+        self,
+        exc_type: Type[BaseException],
+        exc_val: BaseException, 
+        exc_tb: TracebackType
+    ) -> None:
+        """ Async exit handler for BitcoinRPC. """
         await self.aclose()
 
     @staticmethod
-    def _configure_client(rpc_user: str, rpc_password: str, **options: Any) -> httpx.AsyncClient:
-        """ Configure `httpx.AsyncClient` """
+    def _configure_client(
+        rpc_user: str, rpc_password: str,
+        **options: Any
+    ) -> httpx.AsyncClient:
+        """ Configure the `httpx.AsyncClient` for BitcoinRPC.
+        
+        
+        ### Parameters
+        --------------
+
+        rpc_user: str
+            username to connect to rpc.
+        
+        rpc_password: str
+            password to connect to rpc.
+
+        **options: Any
+            httpx options for the AsyncClient.
+
+        """
         auth = (rpc_user, rpc_password)
         headers = {"content-type": "application/json"}
         options = dict(options)
@@ -62,17 +112,38 @@ class BitcoinRPC:
     
     @property
     def url(self) -> str:
+        """ Current BitcoinRPC url. """
         return self._url
     
     @property
     def client(self) -> httpx.AsyncClient:
+        """ Current BitcoinRPC client connection. """
         return self._client
     
     async def aclose(self) -> None:
+        """ Closes the client connection with async. """
         await self.client.aclose()
     
-    async def acall(self, method: str, params: List[Union[str, int, List[str], None]], **kwargs: Any) -> BitcoinRPCResponse:
-        """ Construct a custom async request from the Bitcoin RPC. """
+    async def acall(self,
+        method: str, params: List[Union[str, int, List[str], None]],
+        **kwargs: Any
+    ) -> BitcoinRPCResponse:
+        """ Construct a custom async request from the Bitcoin RPC.
+        
+
+        ## Parameters
+        -------------
+
+        method: str
+            RPC method to request.
+
+        params: List
+            parameters to pass alongside the method.
+
+        kwargs: Any
+            any keyword arguments that need to be passed.
+
+        """
         req = self.client.post(
             url=self.url, 
             content=orjson.dumps(
@@ -98,32 +169,98 @@ class BitcoinRPC:
         """
         return await self.acall("getbestblockhash", [])
     
-    async def get_block(self, block_hash: str, verbosity: Literal[0, 1, 2] = 1, timeout: Optional[float] = 30.0) -> Block:
-        """ Return changes based upon verbosity setting. """
+    async def get_block(
+        self,
+        block_hash: str, verbosity: Literal[0, 1, 2] = 1,
+        timeout: Optional[float] = None
+    ) -> Block:
+        """ Return changes based upon verbosity setting.
+        
+
+        ### Parameters
+        --------------
+
+        block_hash: str
+            hash of the target block
+
+        verbosity: Literal[0, 1, 2]
+            desired verbosity level
+
+        timeout: Optional[float]
+            how long before a request times out
+
+        """
         return await self.acall("getblock", [block_hash, verbosity], timeout=httpx.Timeout(timeout))
 
     async def get_block_count(self) -> BlockCount:
         """ Returns the height of the most-work fully-validated chain. """
         return await self.acall("getblockcount", [])
 
-    async def get_block_filter(self, block_hash: str, filtertype: Optional[str] = None) -> Any:
+    async def get_block_filter(
+        self,
+        block_hash: str, filtertype: Optional[str] = None
+    ) -> Any:
         # TODO: Implement get_block_filter
         raise NotImplementedError("getblockfilter is not implemented.")
     
-    async def get_block_hash(self, height: int) -> BlockHash:
-        """ Returns hash of block in best-block-chain at height provided. """
-        return await self.acall("getblockhash", [height], timeout=httpx.Timeout(30.0))
+    async def get_block_hash(
+        self,
+        height: int,
+        timeout: Optional[float] = None) -> BlockHash:
+        """ Returns hash of block in best-block-chain at height provided.
+        
 
-    async def get_block_header(self, block_hash: str, verbose: Optional[bool] = True) -> BlockHeader:
-        """ Return changes based upon whether verbose is requested. """
-        return await self.acall("getblockheader", [block_hash, verbose])
+        ### Parameters
+        --------------
 
-    async def get_block_stats(self, hash_or_height: Union[int, str], *keys: str, timeout: Optional[float] = 30.0) -> BlockStats:
-        """ Compute per block statistics for a given window. All
-        amounts are in satoshis.
+        height: int
+            block height
+
+        timeout: Optional[float]
+            how long before request times out
         
         """
-        return await self.acall("getblockstats", [hash_or_height, list(keys) or None], timeout=httpx.Timeout(timeout))
+        return await self.acall(
+            "getblockhash", [height], timeout=httpx.Timeout(timeout)
+        )
+
+    async def get_block_header(
+        self,
+        block_hash: str, verbose: Optional[bool] = True,
+        timeout: Optional[float] = None
+    ) -> BlockHeader:
+        """ Return changes based upon whether verbose is requested. """
+        return await self.acall(
+            "getblockheader", [block_hash, verbose], 
+            timeout=httpx.Timeout(timeout)
+        )
+
+    async def get_block_stats(
+        self,
+        hash_or_height: Union[int, str], *stats: str,
+        timeout: Optional[float] = None
+    ) -> BlockStats:
+        """ Compute per-block statistics for a given window. All
+        amounts are in satoshis.
+
+
+        ### Parameters
+        --------------
+        hash_or_height: Union[int, str]
+            hash/height of desired block
+
+        *stats: str
+            desired block stats to receive
+
+        timeout: Optional[float]
+            time before request times out
+        
+        """
+        return await self.acall(
+            "getblockstats",
+            [hash_or_height, list(stats) or None], 
+            timeout=httpx.Timeout(timeout)
+        )
 
     async def get_chain_tips(self) -> ChainTips:
         """ Return information about all known tips in the block tree, 
