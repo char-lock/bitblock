@@ -98,7 +98,7 @@ class BitcoinRPC:
         """
         return await self.acall("getbestblockhash", [])
     
-    async def get_block(self, block_hash: str, verbosity: Literal[0, 1, 2] = 1, timeout: Optional[float] = 30.0) -> Block:
+    async def get_block(self, block_hash: str, verbosity: Literal[0, 1, 2] = 1, timeout: Optional[float] = 600.0) -> Block:
         """ Return changes based upon verbosity setting. """
         return await self.acall("getblock", [block_hash, verbosity], timeout=httpx.Timeout(timeout))
 
@@ -112,13 +112,13 @@ class BitcoinRPC:
     
     async def get_block_hash(self, height: int) -> BlockHash:
         """ Returns hash of block in best-block-chain at height provided. """
-        return await self.acall("getblockhash", [height], timeout=httpx.Timeout(30.0))
+        return await self.acall("getblockhash", [height], timeout=httpx.Timeout(600.0))
 
     async def get_block_header(self, block_hash: str, verbose: Optional[bool] = True) -> BlockHeader:
         """ Return changes based upon whether verbose is requested. """
         return await self.acall("getblockheader", [block_hash, verbose])
 
-    async def get_block_stats(self, hash_or_height: Union[int, str], *keys: str, timeout: Optional[float] = 30.0) -> BlockStats:
+    async def get_block_stats(self, hash_or_height: Union[int, str], *keys: str, timeout: Optional[float] = 600.0) -> BlockStats:
         """ Compute per block statistics for a given window. All
         amounts are in satoshis.
         
