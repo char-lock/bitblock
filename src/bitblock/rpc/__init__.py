@@ -401,7 +401,10 @@ class BitcoinRPC:
         raise NotImplementedError("gettxout is not implemented.")
 
 
-    async def get_tx_out_proof(self, txid: List[str], block_hash: Optional[str]) -> Any:
+    async def get_tx_out_proof(
+        self,
+        txid: List[str], block_hash: Optional[str]
+    ) -> Any:
         # TODO: Implement get_tx_out_proof
         raise NotImplementedError("gettxoutproof is not implemented.")
 
@@ -551,7 +554,11 @@ class BitcoinRPC:
         return await self.acall("getmininginfo", [])
 
 
-    async def get_network_hash_ps(self, nblocks: Optional[int] = 120, height: Optional[int] = -1) -> NetworkHashPS:
+    async def get_network_hash_ps(
+        self,
+        nblocks: Optional[int] = 120,
+        height: Optional[int] = -1
+    ) -> NetworkHashPS:
         """ Returns the estimated network hashes per second based on 
         the last n blocks.
 
