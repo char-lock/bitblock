@@ -259,6 +259,7 @@ class BtcBlock(object):
         # for readability's sake.
         self._transactions = await self._a_update_transactions(_block['tx'])
 
+
     async def _a_update_transactions(
         self,
         transactions: List[RawTransaction]

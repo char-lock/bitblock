@@ -456,7 +456,7 @@ class BitcoinRPC:
         error if the block is not in our best chain
 
 
-        ## Parameters
+        ### Parameters
         -------------
 
         proof: str
@@ -523,6 +523,12 @@ class BitcoinRPC:
         """ Mine blocks immediately to a specified address (before the 
         RPC call returns)
 
+        ### Parameters
+        --------------
+
+        n_blocks: int
+            
+
         """
         return await self.acall(
             "generatetoaddress", [n_blocks, address, maxtries]
@@ -582,7 +588,21 @@ class BitcoinRPC:
         txid: str, verbose: Optional[bool] = False,
         block_hash: Optional[str] = None
     ) -> RawTransaction:
-        """ Return the raw transaction data. """
+        """ Return the raw transaction data. 
+        
+        ### Parameters
+        --------------
+
+        txid: str
+            txid for which to pull data.
+        
+        verbose: Optional[bool]
+            whether to provide more or less detail.
+
+        block_hash: Optional[str]
+            
+
+        """
         return await self.acall("getrawtransaction", [txid, verbose, block_hash])
 
 
