@@ -12,6 +12,8 @@ from numpy import (
     uint64, int64,
 )
 from typing import Literal, Optional, TypeAlias, Union, List, Dict
+from sys import byteorder
+from hashlib import sha256
 
 int_t: TypeAlias = Union[
     uint8, int8,
@@ -42,6 +44,7 @@ def pack_bytes(
         whether the returned value is signed.
 
     """
+    x: bytes = set_endian(x, 'big')
     _byte_sz: int = int(bit_sz / 8)
     _x_sz: int = len(x)
     if _x_sz == 0:
@@ -50,10 +53,8 @@ def pack_bytes(
     if _x_sz > _byte_sz:
         raise OverflowError("Provided `x` is larger than requested `bit_sz`.")
     for _b in range(_byte_sz):
-        _shift: int = 8 * (_byte_sz - ((_b + 1) + (_byte_sz - _x_sz)))
-        if _shift < 0 or _shift > bit_sz - 8:
-            print(f"{_byte_sz} - (({_b} + 1) + ({_byte_sz} - {_x_sz}))")
-        _v: int = x[_x_sz - 1 - _b] if _b <= _x_sz else 0x00
+        _shift: int = 8 * (_byte_sz - (_b + 1) - (_byte_sz - _x_sz))
+        _v: int = x[_b] if _b <= _x_sz else 0x00
         _value |= _v << _shift
     if signed:
         if bit_sz == 8:
@@ -92,11 +93,11 @@ def read_var_int(block: BufferedReader) -> int_t:
     _disc: uint8 = pack_bytes(block.read(1), 8, False)
     if _disc == uint8(0xff):
         _value: uint64 = pack_bytes(block.read(8), 64, False)
-        if int(_value.byteswap()) < int(0x100000000):
+        if _value < int(0x100000000):
             raise ValueError("Not canonical. Encoding too large. 64-bit used.")
     elif _disc == uint8(0xfe):
         _value: uint32 = pack_bytes(block.read(4), 32, False)
-        if _value.byteswap() < int(0x10000):
+        if _value < int(0x10000):
             raise ValueError("Not canonical. Encoding too large. 32-bit used.")
     elif _disc == uint8(0xfd):
         _value: uint16 = pack_bytes(block.read(2), 16, False)
@@ -105,6 +106,7 @@ def read_var_int(block: BufferedReader) -> int_t:
     else:
         _value: uint8 = _disc
     return _value
+
 
 def decode_tx(block: BufferedReader) -> Dict:
     """ Reads transactions from a BufferedReader.
@@ -119,43 +121,52 @@ def decode_tx(block: BufferedReader) -> Dict:
         how many tx to read
 
     """
+    # Transaction :: Version
     _version: uint32 = pack_bytes(block.read(4), 32, False)
+    # Transaction :: vIn
     _tx_in_sz: int_t = read_var_int(block)
-    print(_tx_in_sz)
     _tx_in: List = list()
     for _i in range(_tx_in_sz):
-        _hash: str = endian_swap(block.read(32)).hex()
+        _hash: str = set_endian(block.read(32), 'big').hex()
         _index: uint32 = pack_bytes(block.read(4), 32, False)
         _script_sz: int_t = read_var_int(block)
+        # This is a hacky fix to handle whenever the _script_sz is greater
+        # than an index-ranged integer.
         _sig_script_buffer: List = list()
-        _script_sz_mut = int(_script_sz)
-        print(_script_sz_mut)
-        while _script_sz_mut > 0:
-            if _script_sz_mut >= 0xffffffff:
-                _script_sz_mut -= 0xffffffff
+        _script_sz_mutable: int = int(_script_sz)
+        while _script_sz_mutable > 0:
+            if _script_sz_mutable >= 0xffffffff:
+                _script_sz_mutable -= 0xffffffff
                 _sig_script_buffer.append(block.read(0xffffffff).hex())
             else:
-                _sig_script_buffer.append(block.read(_script_sz_mut).hex())
-                _script_sz_mut = 0
-        _sig_script = ''.join(_sig_script_buffer)
+                _sig_script_buffer.append(
+                    block.read(_script_sz_mutable).hex()
+                )
+                _script_sz_mutable = 0
+        _sig_script: str = ''.join(_sig_script_buffer)
         _sequence: uint32 = pack_bytes(block.read(4), 32, False)
         _tx_in.append([_hash, _index, _script_sz, _sig_script, _sequence])
+    # Transaction :: vOut
     _tx_out_sz: int_t = read_var_int(block)
     _tx_out: List = list()
     for _i in range(_tx_out_sz):
         _value: uint64 = pack_bytes(block.read(8), 64, False)
         _script_sz: int_t = read_var_int(block)
+        # Similar hack as above to monkey-patch large script_sz values.
         _pk_script_buffer: List = list()
-        _script_sz_mut = int(_script_sz)
-        while _script_sz_mut > 0:
-            if _script_sz_mut >= 0xffffffff:
-                _script_sz_mut -= 0xffffffff
+        _script_sz_mutable: int = int(_script_sz)
+        while _script_sz_mutable > 0:
+            if _script_sz_mutable >= 0xffffffff:
+                _script_sz_mutable -= 0xffffffff
                 _pk_script_buffer.append(block.read(0xffffffff).hex())
             else:
-                _pk_script_buffer.append(block.read(_script_sz_mut).hex())
-                _script_sz_mut = 0
-        _pk_script = ''.join(_pk_script_buffer)
+                _pk_script_buffer.append(
+                    block.read(_script_sz_mutable).hex()
+                )
+                _script_sz_mutable = 0
+        _pk_script: str = ''.join(_pk_script_buffer)
         _tx_out.append([_value, _script_sz, _pk_script])
+    # Transaction :: lockTime
     _lock_time: uint32 = pack_bytes(block.read(4), 32, False)
     return {
         "version": _version,
@@ -166,16 +177,69 @@ def decode_tx(block: BufferedReader) -> Dict:
         "lockTime": _lock_time
     }
 
+
 def read_all_tx(block: BufferedReader, tx_sz: int_t) -> List:
-    """ Reads and returns a list of all transactions in the block. """
+    """ Reads and returns a list of all transactions in a provided block.
+
+
+    ### Parameters
+    --------------
+
+    block: BufferedReader
+        source for transaction details
+
+    tx_sz: int_t
+        count of transactions
+
+    """
     _tx: List = list()
     for _i in range(tx_sz):
-        print(_i)
+        print(f"Transaction #{_i}")
         _tx.append(decode_tx(block))
     return _tx
 
-def endian_swap(b: bytes) -> bytes:
-    _new = list()
-    for i in range(len(b)):
-        _new.append(b[len(b) - 1 - i])
-    return bytes(_new)
+
+def set_endian(b: bytes, order: Literal['little', 'big']) -> bytes:
+    """ Checks what the current byteorder is, and swaps bytes if needed.
+    
+    ### Parameters
+    --------------
+
+    b: bytes
+        bytes to swap if necessary
+    
+    order: Literal['little', 'big']
+        desired endianness
+
+    """
+    if byteorder == order or len(b) <= 1:
+        return b
+    else:
+        _t: List = list()
+        for _i in range(len(b)):
+            _t.append(b[len(b) - _i - 1])
+        return bytes(_t)
+
+
+def sha256_2(x) -> bytes:
+    """ Returns the value of x after hashing twice with sha256. """
+    return set_endian(sha256(
+        set_endian(sha256(x).digest(), 'big')
+    ).digest(), 'big')
+
+
+def reverse(x: str) -> str:
+    """ Returns a reversed version of `x`.
+
+
+    ### Parameters
+    --------------
+
+    x: str
+        string to be reversed
+
+    """
+    _t = list()
+    for _i in range(len(x)):
+        _t.append(x[len(x) - _i - 1])
+    return ''.join(_t)
