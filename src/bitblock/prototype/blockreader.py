@@ -51,7 +51,6 @@ class BlockCache(object):
         _cache.seek(0, 0)
         _block["hash"]: str = sha256_2(_cache.read(80)).hex()
         _block["tx_sz"] = read_var_int(_cache)
-        print(_block["hash"] + ": " + str(_block["tx_sz"]))
         _block["tx"] = read_all_tx(_cache, _block["tx_sz"])
         _block["end_pos"]: int = self._reader.tell()
         return _block
@@ -63,4 +62,4 @@ class BlockCache(object):
     def _read(self, sz: int) -> bytes:
         return self._reader.read(sz)
 
-test = BlockCache(2211)
+test = BlockCache(170)

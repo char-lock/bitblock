@@ -121,9 +121,20 @@ def decode_tx(block: BufferedReader) -> Dict:
         how many tx to read
 
     """
+    _tx_start = block.tell()
     # Transaction :: Version
     _version: uint32 = pack_bytes(block.read(4), 32, False)
+    _tx_pos = block.tell()
     # Transaction :: vIn
+    _tx_in_pos = block.tell()
+    _tx_marker = pack_bytes(block.read(1), 8, False)
+    _tx_flag = pack_bytes(block.read(1), 8, False)
+    _segwit = False
+    if _tx_marker != 0 or _tx_flag != 1:
+        block.seek(_tx_pos)
+    else:
+        _segwit = True
+    _tx_in_pos = block.tell()
     _tx_in_sz: int_t = read_var_int(block)
     _tx_in: List = list()
     for _i in range(_tx_in_sz):
@@ -166,15 +177,34 @@ def decode_tx(block: BufferedReader) -> Dict:
                 _script_sz_mutable = 0
         _pk_script: str = ''.join(_pk_script_buffer)
         _tx_out.append([_value, _script_sz, _pk_script])
-    # Transaction :: lockTime
-    _lock_time: uint32 = pack_bytes(block.read(4), 32, False)
+    # Transaction :: Segwit
+    _segwit_pos = block.tell()
+    if _segwit:
+        for _i in range(_tx_in_sz):
+            _num_op = read_var_int(block)
+            for _n in range(_num_op):
+                _op = read_var_int(block)
+                _ = block.read(_op)
+    raw_lock_time = pack_bytes(block.read(4), 32, False)
+    _lock_time = raw_lock_time
+    _tx_pos = block.tell()
+    block.seek(_tx_start)
+    if _segwit:
+        raw_version = block.read(4)
+        raw_in_out = block.read(_segwit_pos - _tx_in_pos)
+        raw_bytes = raw_version + raw_in_out + raw_lock_time
+    else:
+        raw_bytes = block.read(_tx_pos - _tx_start)
+    block.seek(_tx_pos)
+    _tx_hash = sha256_2(raw_bytes).hex()
     return {
         "version": _version,
         "tx_in_sz": _tx_in_sz,
         "tx_in": _tx_in,
         "tx_out_sz": _tx_out_sz,
         "tx_out": _tx_out,
-        "lockTime": _lock_time
+        "lockTime": _lock_time,
+        "tx_hash": _tx_hash,
     }
 
 
@@ -194,7 +224,6 @@ def read_all_tx(block: BufferedReader, tx_sz: int_t) -> List:
     """
     _tx: List = list()
     for _i in range(tx_sz):
-        print(f"Transaction #{_i}")
         _tx.append(decode_tx(block))
     return _tx
 
