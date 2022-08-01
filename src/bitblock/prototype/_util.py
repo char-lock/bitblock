@@ -127,6 +127,7 @@ def decode_tx(block: BufferedReader) -> Dict:
     _tx_pos = block.tell()
     # Transaction :: vIn
     _tx_in_pos = block.tell()
+    # Checking for whether or not this is a Segwit transaction.
     _tx_marker = pack_bytes(block.read(1), 8, False)
     _tx_flag = pack_bytes(block.read(1), 8, False)
     _segwit = False

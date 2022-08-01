@@ -7,10 +7,7 @@ from numpy import int32, uint32, uint64
 from typing import Dict, TypeAlias, List
 from io import BufferedReader, FileIO, BytesIO
 from _util import *
-from guppy import hpy
 from hashlib import sha256
-
-hp = hpy()
 
 BLOCK_DIR = r"E:\Bitcoin\blockchain\blocks"
 MAGIC = uint32(0xd9b4bef9)
@@ -28,7 +25,6 @@ class BlockCache(object):
         self._reader.seek(0, 0)
         self._blocks = list()
         self._read_all_blocks()
-        print(len(self._blocks))
     
     def _check_file(self) -> None:
         _magic: uint32 = pack_bytes(self._read(4), 32, False)
@@ -62,4 +58,8 @@ class BlockCache(object):
     def _read(self, sz: int) -> bytes:
         return self._reader.read(sz)
 
-test = BlockCache(170)
+    def get_block_by_hash(self, hash: str):
+        for _block in self._blocks:
+            if _block["hash"] == hash:
+                return _block
+        raise ValueError("Hash not in file.")
