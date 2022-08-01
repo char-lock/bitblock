@@ -190,6 +190,11 @@ def read_uint64(block: BufferedReader) -> uint64:
     return pack(block.read(8), 64)
 
 
+def read_hash256(block: BufferedReader) -> str:
+    """ Reads a 256-bit hash from a BufferedReader. """
+    return set_endian(block.read(32), 'big').hex()
+
+
 def sha256_2(x: bytes) -> bytes:
     """ Returns digest of using the sha256 operation twice.
 
